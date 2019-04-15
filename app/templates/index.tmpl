@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en" ng-app="ECSPics">
+<head>
+	<title>Your Details</title>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--===============================================================================================-->
+	<link rel="icon" type="image/png" href="app/images/icons/favicon.ico"/>
+<!--===============================================================================================-->
+	<link rel="stylesheet" type="text/css" href="app/vendor/bootstrap/css/bootstrap.min.css">
+<!--===============================================================================================-->
+	<link rel="stylesheet" type="text/css" href="app/fonts/font-awesome-4.7.0/css/font-awesome.min.css">
+<!--===============================================================================================-->
+	<link rel="stylesheet" type="text/css" href="app/vendor/animate/animate.css">
+<!--===============================================================================================-->
+	<link rel="stylesheet" type="text/css" href="app/vendor/css-hamburgers/hamburgers.min.css">
+<!--===============================================================================================-->
+	<link rel="stylesheet" type="text/css" href="app/vendor/select2/select2.min.css">
+<!--===============================================================================================-->
+	<link rel="stylesheet" type="text/css" href="app/css/util.css">
+	<link rel="stylesheet" type="text/css" href="app/css/main.css">
+<!--===============================================================================================-->
+</head>
+<body>
+	<div class="bg-contact100">
+		<div class="container-contact100">
+    <div class="wrap-contact101">
+    <h1 class="contact100-form-title col-md-12">ECSPics</h1>
+     <div class="row">
+      <div class="col-md-4">
+        <form  class="contact100-form">
+          <div class="form-group">
+            <label for="accesskey" style="font-weight: bold;">Access Key:</label>
+            <input type="text" class="form-control" id="accesskey" value = {{.AccessKey}}>
+          </div>
+          <div class="form-group">
+            <label for="secretKey1"  style="font-weight: bold;">Secret Key1:</label>
+            <input type="text" class="form-control" id="secretKey1" value={{.SecretKey1}}>
+          </div>
+          <div class="form-group">
+            <label for="secretKey2"  style="font-weight: bold;">Secret Key2:</label>
+            <input type="text" class="form-control" id="secretKey2" value={{.SecretKey2}}>
+          </div>
+        </form>
+       </div>
+       </div>
+    </div>
+    </div>
+  </div>
+</body>
