@@ -159,6 +159,8 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			rendering.HTML(w, http.StatusInternalServerError, "error", http.StatusInternalServerError)
 		}
+
+		
 		r.ParseForm()
 		authentication := r.FormValue("authentication")
 		user := r.FormValue("user")
@@ -166,7 +168,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		endpoint := r.FormValue("endpoint")
 		namespace := r.FormValue("namespace")
 		// For AD authentication, needs to retrieve the S3 secret key from ECS using the ECS management API
-		if authentication == "ad" {
+		if authentication == "ad" { //ktu ndodh  ekzekutimi i kodit
 			url, err := url.Parse(endpoint)
 			if err != nil {
 				rendering.HTML(w, http.StatusOK, "login", "Check the endpoint")
@@ -194,6 +196,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 				headers := map[string][]string{}
 				headers["X-Sds-Auth-Token"] = []string{resp.Header.Get("X-Sds-Auth-Token")}
 				req.Header = headers
+				log.Print(headers)
 				resp, err = client.Do(req)
 				if err != nil {
 					log.Print(err)
@@ -227,7 +230,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 				session.Values["Namespace"] = namespace
 				p := credentials{
 					AccessKey:  user,
-					SecretKey1: userSecretKeysResult.SecretKey1,
+					SecretKey1: secretKey,
 					SecretKey2: userSecretKeysResult.SecretKey2,
 				}
 				err = sessions.Save(r, w)
