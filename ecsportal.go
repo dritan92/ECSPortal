@@ -7,7 +7,6 @@ import (
 	"html/template"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -103,12 +102,17 @@ type ECS struct {
 }
 
 var hostname string
+var ecs ECS
 
 func main() {
 	var port = ""
 	// get all the environment data
 	port = "8001" //os.Getenv("PORT")
-
+	ecs = ECS{
+		Hostname:  os.Getenv("HOSTNAME"),
+		EndPoint:  os.Getenv("ENDPOINT"),
+		Namespace: os.Getenv("NAMESPACE"),
+	}
 	hostname, _ = os.Hostname()
 
 	// See http://godoc.org/github.com/unrolled/render
@@ -118,7 +122,6 @@ func main() {
 	router := mux.NewRouter()
 	router.HandleFunc("/", Index)
 	router.HandleFunc("/login", Login)
-	router.HandleFunc("/logout", Logout)
 	router.PathPrefix("/app/").Handler(http.StripPrefix("/app/", http.FileServer(http.Dir("app"))))
 
 	n := negroni.Classic()
@@ -155,100 +158,62 @@ func init() {
 func Login(w http.ResponseWriter, r *http.Request) {
 	// If informaton received from the form
 	if r.Method == "POST" {
-		session, err := store.Get(r, "session-name")
-		if err != nil {
-			rendering.HTML(w, http.StatusInternalServerError, "error", http.StatusInternalServerError)
-		}
-
-		
 		r.ParseForm()
-		authentication := r.FormValue("authentication")
 		user := r.FormValue("user")
 		password := r.FormValue("password")
-		endpoint := r.FormValue("endpoint")
-		namespace := r.FormValue("namespace")
-		// For AD authentication, needs to retrieve the S3 secret key from ECS using the ECS management API
-		if authentication == "ad" { //ktu ndodh  ekzekutimi i kodit
-			url, err := url.Parse(endpoint)
-			if err != nil {
-				rendering.HTML(w, http.StatusOK, "login", "Check the endpoint")
-			}
-			hostname := url.Host
-			if strings.Contains(hostname, ":") {
-				hostname = strings.Split(hostname, ":")[0]
-			}
-			tr := &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			}
-			client := &http.Client{Transport: tr}
-			// Get an authentication token from ECS
-			req, _ := http.NewRequest("GET", "https://"+hostname+":4443/login", nil)
-			req.SetBasicAuth(user, password)
-			resp, err := client.Do(req)
+		tr := &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+		client := &http.Client{Transport: tr}
+		// Get token for the ECS management API using Active Directory credentials provided by the user
+		req, _ := http.NewRequest("GET", "https://"+ecs.Hostname+":4443/login", nil)
+		req.SetBasicAuth(user, password)
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Print(err)
+		}
+		if resp.StatusCode == 401 {
+			rendering.HTML(w, http.StatusOK, "login", "Check your crententials and that you're allowed to generate a secret key on ECS")
+		} else {
+			// Get the object user secret key if it already exists
+			req, _ = http.NewRequest("GET", "https://"+ecs.Hostname+":4443/object/secret-keys", nil)
+			headers := map[string][]string{}
+			headers["X-Sds-Auth-Token"] = []string{resp.Header.Get("X-Sds-Auth-Token")}
+			req.Header = headers
+			resp, err = client.Do(req)
 			if err != nil {
 				log.Print(err)
 			}
-			if resp.StatusCode == 401 {
-				rendering.HTML(w, http.StatusOK, "login", "Check your crententials and that you're allowed to generate a secret key on ECS")
-			} else {
-				// Get the secret key from ECS
-				req, _ = http.NewRequest("GET", "https://"+hostname+":4443/object/secret-keys", nil)
-				headers := map[string][]string{}
-				headers["X-Sds-Auth-Token"] = []string{resp.Header.Get("X-Sds-Auth-Token")}
+			buf := new(bytes.Buffer)
+			buf.ReadFrom(resp.Body)
+			secretKey := ""
+			userSecretKeysResult := &UserSecretKeysResult{}
+			xml.NewDecoder(buf).Decode(userSecretKeysResult)
+			secretKey = userSecretKeysResult.SecretKey1
+			if secretKey == "" {
+				// If the secret key doesn't exist yet for this user, create it
+				req, _ = http.NewRequest("POST", "https://"+ecs.Hostname+":4443/object/secret-keys", bytes.NewBufferString("<secret_key_create_param></secret_key_create_param>"))
+				headers["Content-Type"] = []string{"application/xml"}
 				req.Header = headers
-				log.Print(headers)
 				resp, err = client.Do(req)
 				if err != nil {
 					log.Print(err)
 				}
-				buf := new(bytes.Buffer)
+				buf = new(bytes.Buffer)
 				buf.ReadFrom(resp.Body)
-				secretKey := ""
-				userSecretKeysResult := &UserSecretKeysResult{}
-				xml.NewDecoder(buf).Decode(userSecretKeysResult)
-				secretKey = userSecretKeysResult.SecretKey1
-
-				// If a secret key doesn't exist yet for this object user, needs to generate it
-				if secretKey == "" {
-					req, _ = http.NewRequest("POST", "https://"+hostname+":4443/object/secret-keys", bytes.NewBufferString("<secret_key_create_param></secret_key_create_param>"))
-					headers["Content-Type"] = []string{"application/xml"}
-					req.Header = headers
-					resp, err = client.Do(req)
-					if err != nil {
-						log.Print(err)
-					}
-					buf = new(bytes.Buffer)
-					buf.ReadFrom(resp.Body)
-					userSecretKeyResult := &UserSecretKeyResult{}
-					xml.NewDecoder(buf).Decode(userSecretKeyResult)
-					secretKey = userSecretKeyResult.SecretKey
-				}
-				log.Print(secretKey)
-				session.Values["AccessKey"] = user
-				session.Values["SecretKey"] = secretKey
-				session.Values["Endpoint"] = endpoint
-				session.Values["Namespace"] = namespace
-				p := credentials{
-					AccessKey:  user,
-					SecretKey1: secretKey,
-					SecretKey2: userSecretKeysResult.SecretKey2,
-				}
-				err = sessions.Save(r, w)
-				if err != nil {
-					rendering.HTML(w, http.StatusInternalServerError, "error", http.StatusInternalServerError)
-				}
-				rendering.HTML(w, http.StatusOK, "index", p)
+				userSecretKeyResult := &UserSecretKeyResult{}
+				xml.NewDecoder(buf).Decode(userSecretKeyResult)
+				secretKey = userSecretKeyResult.SecretKey
 			}
-			// For an object user authentication, use the credentials as-is
-		} else {
+			session, err := store.Get(r, "session-name")
+			if err != nil {
+				rendering.HTML(w, http.StatusInternalServerError, "error", http.StatusInternalServerError)
+			}
 			session.Values["AccessKey"] = user
-			session.Values["SecretKey"] = password
-			session.Values["Endpoint"] = endpoint
-			session.Values["Namespace"] = namespace
+			session.Values["SecretKey"] = secretKey
 			p := credentials{
 				AccessKey:  user,
-				SecretKey1: password,
-				SecretKey2: "",
+				SecretKey1: secretKey,
 			}
 			err = sessions.Save(r, w)
 			if err != nil {
@@ -260,21 +225,6 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		rendering.HTML(w, http.StatusOK, "login", nil)
 	}
 }
-
-func Logout(w http.ResponseWriter, r *http.Request) {
-	session, err := store.Get(r, "session-name")
-	if err != nil {
-		rendering.HTML(w, http.StatusInternalServerError, "error", http.StatusInternalServerError)
-	}
-	delete(session.Values, "AccessKey")
-	delete(session.Values, "SecretKey")
-	delete(session.Values, "Endpoint")
-	delete(session.Values, "Namespace")
-	err = sessions.Save(r, w)
-
-	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
-}
-
 func Index(w http.ResponseWriter, r *http.Request) {
 	rendering.HTML(w, http.StatusOK, "login", nil)
 }
