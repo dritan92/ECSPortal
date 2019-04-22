@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/tls"
+	"encoding/json"
 	"encoding/xml"
 	"html/template"
 	"log"
@@ -118,7 +119,9 @@ func main() {
 	router := mux.NewRouter()
 	router.HandleFunc("/", Index)
 	router.HandleFunc("/login", Login)
-	router.HandleFunc("/logout", Logout)
+	router.HandleFunc("/api/v1/ecs", Ecs).Methods("GET")
+	router.Handle("/api/v1/buckets", appHandler(Buckets)).Methods("GET")
+	router.Handle("/api/v1/createbucket", appHandler(CreateBucket)).Methods("POST")
 	router.PathPrefix("/app/").Handler(http.StripPrefix("/app/", http.FileServer(http.Dir("app"))))
 
 	n := negroni.Classic()
@@ -147,8 +150,14 @@ type credentials struct {
 
 var tpl *template.Template
 
+var ecs ECS
+
 func init() {
 	tpl = template.Must(template.ParseFiles("app/templates/index.tmpl"))
+}
+
+func Ecs(w http.ResponseWriter, r *http.Request) {
+	rendering.JSON(w, http.StatusOK, ecs)
 }
 
 // Login using an AD or object user
@@ -160,13 +169,11 @@ func Login(w http.ResponseWriter, r *http.Request) {
 			rendering.HTML(w, http.StatusInternalServerError, "error", http.StatusInternalServerError)
 		}
 
-		
 		r.ParseForm()
 		authentication := r.FormValue("authentication")
 		user := r.FormValue("user")
 		password := r.FormValue("password")
 		endpoint := r.FormValue("endpoint")
-		namespace := r.FormValue("namespace")
 		// For AD authentication, needs to retrieve the S3 secret key from ECS using the ECS management API
 		if authentication == "ad" { //ktu ndodh  ekzekutimi i kodit
 			url, err := url.Parse(endpoint)
@@ -227,7 +234,6 @@ func Login(w http.ResponseWriter, r *http.Request) {
 				session.Values["AccessKey"] = user
 				session.Values["SecretKey"] = secretKey
 				session.Values["Endpoint"] = endpoint
-				session.Values["Namespace"] = namespace
 				p := credentials{
 					AccessKey:  user,
 					SecretKey1: secretKey,
@@ -244,7 +250,6 @@ func Login(w http.ResponseWriter, r *http.Request) {
 			session.Values["AccessKey"] = user
 			session.Values["SecretKey"] = password
 			session.Values["Endpoint"] = endpoint
-			session.Values["Namespace"] = namespace
 			p := credentials{
 				AccessKey:  user,
 				SecretKey1: password,
@@ -261,20 +266,103 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func Logout(w http.ResponseWriter, r *http.Request) {
+//get bucket list
+func Buckets(w http.ResponseWriter, r *http.Request) *appError {
 	session, err := store.Get(r, "session-name")
 	if err != nil {
-		rendering.HTML(w, http.StatusInternalServerError, "error", http.StatusInternalServerError)
+		return &appError{err: err, status: http.StatusInternalServerError, json: http.StatusText(http.StatusInternalServerError)}
 	}
-	delete(session.Values, "AccessKey")
-	delete(session.Values, "SecretKey")
-	delete(session.Values, "Endpoint")
-	delete(session.Values, "Namespace")
-	err = sessions.Save(r, w)
+	s3 := S3{
+		EndPointString: ecs.EndPoint,
+		AccessKey:      session.Values["AccessKey"].(string),
+		SecretKey:      session.Values["SecretKey"].(string),
+		Namespace:      ecs.Namespace,
+	}
+	response, _ := s3Request(s3, "", "GET", "/", make(map[string][]string), "")
+	listBucketsResp := &ListBucketsResp{}
+	xml.NewDecoder(strings.NewReader(response.Body)).Decode(listBucketsResp)
+	buckets := []string{}
+	for _, bucket := range listBucketsResp.Buckets {
+		buckets = append(buckets, bucket.Name)
+	}
+	rendering.JSON(w, http.StatusOK, buckets)
 
-	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+	return nil
 }
 
+type NewBucket struct {
+	Name      string `json:"bucket"`
+	Encrypted bool   `json:"encrypted"`
+}
+
+// create bucket func.
+func CreateBucket(w http.ResponseWriter, r *http.Request) *appError {
+	session, err := store.Get(r, "session-name")
+	if err != nil {
+		return &appError{err: err, status: http.StatusInternalServerError, json: http.StatusText(http.StatusInternalServerError)}
+	}
+	s3 := S3{
+		EndPointString: ecs.EndPoint,
+		AccessKey:      session.Values["AccessKey"].(string),
+		SecretKey:      session.Values["SecretKey"].(string),
+		Namespace:      ecs.Namespace,
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	var bucket NewBucket
+	err = decoder.Decode(&bucket)
+	if err != nil {
+		return &appError{err: err, status: http.StatusBadRequest, json: "Can't decode JSON data"}
+	}
+
+	// Add the necessary headers for Metadata Search and Access During Outage
+	createBucketHeaders := map[string][]string{}
+	createBucketHeaders["Content-Type"] = []string{"application/xml"}
+	createBucketHeaders["x-emc-is-stale-allowed"] = []string{"true"}
+	createBucketHeaders["x-emc-metadata-search"] = []string{"ObjectName,x-amz-meta-image-width;Integer,x-amz-meta-image-height;Integer,x-amz-meta-gps-latitude;Decimal,x-amz-meta-gps-longitude;Decimal"}
+
+	createBucketResponse, _ := s3Request(s3, bucket.Name, "PUT", "/", createBucketHeaders, "")
+
+	// Enable CORS after the bucket creation to allow the web browser to send requests directly to ECS
+	if createBucketResponse.Code == 200 {
+		enableBucketCorsHeaders := map[string][]string{}
+		enableBucketCorsHeaders["Content-Type"] = []string{"application/xml"}
+		corsConfiguration := `
+		<CORSConfiguration>
+		 <CORSRule>
+		   <AllowedOrigin>*</AllowedOrigin>
+		   <AllowedHeader>*</AllowedHeader>
+		   <ExposeHeader>x-amz-meta-image-width</ExposeHeader>
+		   <ExposeHeader>x-amz-meta-image-height</ExposeHeader>
+		   <ExposeHeader>x-amz-meta-gps-latitude</ExposeHeader>
+		   <ExposeHeader>x-amz-meta-gps-longitude</ExposeHeader>
+		   <AllowedMethod>HEAD</AllowedMethod>
+		   <AllowedMethod>GET</AllowedMethod>
+		   <AllowedMethod>PUT</AllowedMethod>
+		   <AllowedMethod>POST</AllowedMethod>
+		   <AllowedMethod>DELETE</AllowedMethod>
+		 </CORSRule>
+		</CORSConfiguration>
+	  `
+		enableBucketCorsResponse, _ := s3Request(s3, bucket.Name, "PUT", "/?cors", enableBucketCorsHeaders, corsConfiguration)
+		if enableBucketCorsResponse.Code == 200 {
+			rendering.JSON(w, http.StatusOK, struct {
+				CorsConfiguration string `json:"cors_configuration"`
+				Bucket            string `json:"bucket"`
+			}{
+				CorsConfiguration: corsConfiguration,
+				Bucket:            bucket.Name,
+			})
+		} else {
+			return &appError{err: err, status: http.StatusBadRequest, json: "Bucket created, but CORS can't be enabled"}
+		}
+	} else {
+		return &appError{err: err, status: http.StatusBadRequest, json: "Bucket can't be created"}
+	}
+	return nil
+}
+
+//main index function
 func Index(w http.ResponseWriter, r *http.Request) {
 	rendering.HTML(w, http.StatusOK, "login", nil)
 }

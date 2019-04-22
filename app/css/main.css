@@ -157,7 +157,7 @@ iframe {
   justify-content: center;
   align-items: center;
   padding: 15px;
-  background: rgba(132,106,221,0.9);
+  background: rgb(0, 118, 206, 0.9);
 }
 
 .wrap-contact100 {
@@ -321,7 +321,7 @@ textarea.input100 {
 }
 
 .input100:focus + .focus-input100 + .symbol-input100 {
-  color: #846add;
+  color: #0076CE;
   padding-left: 22px;
 }
 
@@ -343,7 +343,7 @@ textarea.input100 {
   width: 100%;
   height: 50px;
   border-radius: 25px;
-  background: #846add;
+  background: #0076CE;
   font-family: Montserrat-Bold;
   font-size: 15px;
   line-height: 1.5;

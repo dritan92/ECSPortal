@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" ng-app="ECSPics">
+<html lang="en" ng-app="ECSPortal">
 <head>
 	<title>Your Details</title>
 	<meta charset="UTF-8">
@@ -20,12 +20,30 @@
 	<link rel="stylesheet" type="text/css" href="app/css/util.css">
 	<link rel="stylesheet" type="text/css" href="app/css/main.css">
 <!--===============================================================================================-->
+  <script type="text/javascript" src="app/js/jquery-2.1.4.min.js"></script>
+  <script type="text/javascript" src="app/js/bootstrap.min.js"></script>
+  <script type="text/javascript" src="app/js/angular.min.js"></script>
+  <script type="text/javascript" src="app/js/angular-sanitize.min.js"></script>
+  <script type="text/javascript" src="app/js/angular-animate.min.js"></script>
+  <script type="text/javascript" src="app/js/dirPagination.js"></script>
+  <script type="text/javascript" src="app/js/exif.js"></script>
+  <script type="text/javascript" src="app/js/jquery.exif.js"></script>
+  <script type="text/javascript" src="app/js/run_prettify.js"></script>
+  <script type="text/javascript" src="app/js/json2.js"></script>
+  <script type="text/javascript" src="app/js/canvas-to-blob.js"></script>
+  <script type="text/javascript" src="app/Scripts/app.js"></script>
+<!--===============================================================================================-->
 </head>
-<body>
+<body ng-controller="EcsPortalController as ecsportal">
 	<div class="bg-contact100">
 		<div class="container-contact100">
     <div class="wrap-contact101">
     <h1 class="contact100-form-title col-md-12">ECSPortal Details</h1>
+    <div class="row">
+      <div class="col-md-4">
+        <ecsportal-bucket></ecsportal-bucket>
+      </div>
+    </div>
      <div class="row">
       <div class="col-md-4">
         <form  class="contact100-form">

@@ -1,0 +1,20 @@
+<div class="panel panel-primary">
+  <div class="panel-heading">Create a new bucket</div>
+  <div class="panel-body">
+    <form accept-charset="UTF-8" ng-submit="bucketController.createBucket()">
+      <div class="field">
+        <div class="input-group">
+          <span class="input-group-addon">Bucket name</span>
+          <input ng-model="bucketController.bucket" class="form-control" type="text" />
+        </div>
+      </div>
+      <br />
+      <div class="actions">
+        <button class="btn btn-primary has-spinner" ng-disabled="loadingService.isLoading()" ng-class="{'active': loadingService.isLoading()}">
+          <span class="spinner"><i class="fa fa-refresh fa-spin"></i></span>
+          Create
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
